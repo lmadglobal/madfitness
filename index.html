@@ -18,14 +18,14 @@
   --bg:#F3F4F1; --card:#FFFFFF; --ink:#16181A; --muted:#5B6168; --line:#ECEEE9; --border:#DADDD6;
   --track:#E6E9E3; --accent:#1F6B4F; --accent-soft:#EAF3EE; --on-accent:#FFFFFF;
   --protein:#1D4ED8; --carbs:#F59E0B; --fat:#6B4E9B; --water:#0E7490; --water-soft:#DCEEF2;
-  --danger:#B42318; --chip:#F0F1EE; --over:#C2410C;
+  --danger:#B42318; --chip:#F0F1EE; --over:#C2410C; --cheat:#C2410C; --cheat-soft:#FDE7D7; --cheat-ink:#9A3412;
 }
 @media (prefers-color-scheme: dark){
   :root{
     --bg:#111312; --card:#1C1F1D; --ink:#F1F3EF; --muted:#A3AAA4; --line:#2A2E2B; --border:#363B37;
     --track:#2D322E; --accent:#4FB58A; --accent-soft:#1D3328; --on-accent:#0B1510;
     --protein:#6E95F5; --carbs:#F7B53B; --fat:#A98BD6; --water:#3DB4CF; --water-soft:#1E3940;
-    --danger:#F47766; --chip:#262A27; --over:#F08A4B;
+    --danger:#F47766; --chip:#262A27; --over:#F08A4B; --cheat:#F08A4B; --cheat-soft:#4A2A17; --cheat-ink:#FFC9A3;
   }
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -132,6 +132,27 @@ details[open] summary svg{transform:rotate(180deg)}
 .item .t{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
 .item .s{font-size:13px;color:var(--muted)}
 .empty-box{border:1.5px dashed var(--border);border-radius:16px;padding:16px;margin:0 16px 12px;color:var(--muted);font-size:14px;line-height:1.45}
+.datebar .lbl{display:flex;align-items:center;gap:6px}
+.cal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px;margin:-6px 0 14px}
+.cal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cal-hd b{font-size:16px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}
+.cal-dow{font-size:11px;font-weight:600;color:var(--muted);padding:4px 0}
+.cal-day{position:relative;height:42px;border:0;background:transparent;border-radius:21px;font-size:15px;padding:0;display:flex;align-items:center;justify-content:center}
+.cal-day:disabled{color:var(--muted);opacity:.4;cursor:default}
+.cal-day.today{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.cal-day.cheat{background:var(--cheat-soft);color:var(--cheat-ink);font-weight:700}
+.cal-day.sel{background:var(--ink);color:var(--bg);font-weight:700}
+.cal-day.sel.cheat{box-shadow:inset 0 0 0 3px var(--cheat)}
+.cal-day .dot{position:absolute;bottom:5px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:3px;background:var(--accent)}
+.cal-day.sel .dot{background:var(--bg)}
+.cal-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin-top:8px;padding:0 4px}
+.cal-legend span{display:flex;align-items:center;gap:6px}
+.cheatrow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border-radius:16px;padding:6px 16px;margin-bottom:14px;min-height:56px}
+.cheatrow label{display:flex;align-items:center;gap:12px;font-size:16px;font-weight:600;min-height:44px;cursor:pointer}
+.cheatrow input{width:22px;height:22px;accent-color:var(--cheat)}
+.cheatrow .note{text-align:right}
+.badge{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;background:var(--cheat-soft);color:var(--cheat-ink);font-size:12px;font-weight:700}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center}
 .note{font-size:13px;color:var(--muted);line-height:1.45}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -180,6 +201,14 @@ function loadData(){
   }catch(e){ return blankData(); }
 }
 let data = loadData();
+// The log covers the current year only: on the first open of a new year, earlier days are cleared.
+// Saved meals, recent foods and goals carry over.
+function pruneOldYears(){
+  const y = String(new Date().getFullYear()) + '-';
+  let removed = 0;
+  for(const k of Object.keys(data.days)) if(!k.startsWith(y)){ delete data.days[k]; removed++; }
+  if(removed) save();
+}
 function save(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
   catch(e){ toast('Could not save — storage full?'); }
@@ -278,12 +307,18 @@ function renderMain(){
     return `<div class="nrow"><span>${n}</span><span>${fmt(t[key])}${goal ? ' / ' + fmt(goal) : ''} ${u}</span></div>`;
   }).join('');
 
-  document.getElementById('app').innerHTML = `<div class="wrap">
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="wrap">
     <div class="hdr"><h1>Diet</h1><button class="icon-btn" data-act="settings" aria-label="Goals and settings">${I.gear}</button></div>
     <div class="datebar">
-      <button class="icon-btn plain" data-act="prev" aria-label="Previous day">${I.left}</button>
-      <button class="lbl" data-act="today">${label}</button>
+      <button class="icon-btn plain" data-act="prev" aria-label="Previous day" ${k.slice(5) === '01-01' ? 'disabled style="opacity:.35"' : ''}>${I.left}</button>
+      <button class="lbl" data-act="cal" aria-expanded="${!!ui.calOpen}">${label}${d.cheat ? ' <span class="badge">Cheat</span>' : ''}<span style="display:flex;color:var(--muted);transform:${ui.calOpen ? 'rotate(180deg)' : 'none'}">${I.chev}</span></button>
       <button class="icon-btn plain" data-act="next" aria-label="Next day" ${k === today ? 'disabled style="opacity:.35"' : ''}>${I.right}</button>
+    </div>
+    ${ui.calOpen ? calendarHTML() : ''}
+    <div class="cheatrow">
+      <label><input type="checkbox" id="cheat" ${d.cheat ? 'checked' : ''}> Cheat day</label>
+      <span class="note">${lastCheatText()}</span>
     </div>
     <section class="card" aria-label="Daily summary">
       <div class="ring-row">${ring(t.kcal, g.kcal)}
@@ -314,8 +349,48 @@ function renderMain(){
       <div style="padding-bottom:8px">${nrows}</div>
     </details>
   </div>`;
+  document.getElementById('cheat').addEventListener('change', ev => {
+    const dd = day(ui.date); dd.cheat = ev.target.checked; if(!dd.cheat) delete dd.cheat; save(); renderMain();
+  });
   const det = document.querySelector('[data-details]');
   det.addEventListener('toggle', () => { ui.detailsOpen = det.open; });
+}
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function calendarHTML(){
+  const now = new Date(), Y = now.getFullYear(), m = ui.calMonth ?? now.getMonth(), todayK = keyOf(now);
+  const start = new Date(Y, m, 1).getDay(), dim = new Date(Y, m + 1, 0).getDate();
+  let cells = ['S','M','T','W','T','F','S'].map(x => `<div class="cal-dow" aria-hidden="true">${x}</div>`).join('');
+  for(let i = 0; i < start; i++) cells += '<div></div>';
+  for(let dnum = 1; dnum <= dim; dnum++){
+    const k = keyOf(new Date(Y, m, dnum)), dd = data.days[k];
+    const has = dd && (dd.entries.length || dd.water);
+    const cls = ['cal-day', k === ui.date ? 'sel' : '', k === todayK ? 'today' : '', dd && dd.cheat ? 'cheat' : ''].join(' ');
+    const lbl = new Date(Y, m, dnum).toLocaleDateString('en-US', {month:'long', day:'numeric'}) + (dd && dd.cheat ? ', cheat day' : '') + (has ? ', has entries' : '');
+    cells += `<button class="${cls}" data-act="pick-day" data-k="${k}" aria-label="${lbl}" ${k > todayK ? 'disabled' : ''}>${dnum}${has ? '<span class="dot"></span>' : ''}</button>`;
+  }
+  const dec = now.getMonth() === 11 ? `<div class="note" style="padding:8px 4px 0">The log starts fresh on January 1. Export a backup in Settings if you want to keep this year.</div>` : '';
+  return `<div class="cal" role="group" aria-label="Pick a day">
+    <div class="cal-hd">
+      <button class="icon-btn plain" data-act="cal-prev" aria-label="Previous month" ${m === 0 ? 'disabled style="opacity:.3"' : ''}>${I.left}</button>
+      <b>${MONTHS[m]} ${Y}</b>
+      <button class="icon-btn plain" data-act="cal-next" aria-label="Next month" ${m === 11 ? 'disabled style="opacity:.3"' : ''}>${I.right}</button>
+    </div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-legend"><span><span style="width:6px;height:6px;border-radius:3px;background:var(--accent)"></span>Logged</span>
+      <span><span style="width:14px;height:14px;border-radius:7px;background:var(--cheat-soft);box-shadow:inset 0 0 0 1px var(--cheat)"></span>Cheat day</span>
+      <button class="link" style="min-height:0;margin-left:auto" data-act="today">Go to today</button></div>
+    ${dec}
+  </div>`;
+}
+function lastCheatText(){
+  const todayK = keyOf(new Date());
+  // Show the most recent cheat day before the day being viewed (so checking today still shows your previous one).
+  const ks = Object.keys(data.days).filter(k => data.days[k].cheat && k < ui.date && k <= todayK).sort();
+  if(!ks.length) return 'No earlier cheat days';
+  const last = ks[ks.length - 1];
+  const diff = Math.round((dateFromKey(ui.date) - dateFromKey(last)) / 864e5);
+  const when = diff === 1 ? '1 day before' : diff + ' days before';
+  return `Previous: ${dateFromKey(last).toLocaleDateString('en-US', {month:'short', day:'numeric'})} · ${when}`;
 }
 function servingText(e){
   if(e.qty === 1) return e.servingLabel || '1 serving';
@@ -441,7 +516,7 @@ function renderLayer(){
 function searchScreen(){
   return `<div class="screen" role="dialog" aria-label="Add food">
     <div class="screen-hd">
-      <div class="top"><div><button class="icon-btn plain" data-act="close" aria-label="Back">${I.left}</button><h1>Add food${ui.addMeal ? ' · ' + ui.addMeal : ''}</h1></div></div>
+      <div class="top"><div><button class="icon-btn plain" data-act="close" aria-label="Back">${I.left}</button><h1 style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ui.builderFor ? 'Add to ' + esc(builderMeal()?.name || 'meal') : 'Add food' + (ui.addMeal ? ' · ' + ui.addMeal : '')}</h1></div></div>
       <form id="qform" class="field" role="search"><span style="display:flex">${I.search}</span>
         <label class="sr" for="q">Search foods</label>
         <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="e.g. Kiwi Snapple" value="${esc(ui.search.q)}">
@@ -474,6 +549,8 @@ function labelBox(n, note){
     <div class="macro3"><div><span>Protein</span><b>${r1(n.protein)} g</b></div><div><span>Carbs</span><b>${r1(n.carbs)} g</b></div><div><span>Fat</span><b>${r1(n.fat)} g</b></div></div>
     ${extra}${note ? `<div class="note" style="padding-top:6px">${note}</div>` : ''}</div>`;
 }
+function builderMeal(){ return data.saved.find(x => x.id === ui.builderFor); }
+function addLabel(s, n){ return `Add to ${ui.builderFor ? (builderMeal()?.name || 'meal') : s.meal} · ${fmt(n.kcal)} kcal`; }
 function stepper(v, label){
   return `<div class="stepper"><button type="button" data-act="qty-" aria-label="Decrease ${label}">−</button>
     <input id="qty" inputmode="decimal" value="${fmtQty(v)}" aria-label="${label}">
@@ -486,10 +563,10 @@ function foodSheet(s){
     <div class="sec" style="gap:2px"><h2>${esc(f.name)}</h2><div class="note">${esc([f.brand, f.source === 'usda' ? 'USDA ' + (f.kind || '').toLowerCase() + ' food' : 'Your food'].filter(Boolean).join(' · '))}</div></div>
     <div class="sec"><div class="sublabel">Serving</div><div class="seg" role="group" aria-label="Serving size">${segButtons(f.servings.map(x => x.label), s.si, 'serv')}</div></div>
     <div class="sec" style="flex-direction:row;justify-content:space-between;align-items:center"><div class="sublabel">${sv.unitMode ? 'Amount (' + esc(sv.unit) + ')' : 'Quantity'}</div>${stepper(s.qty, sv.unitMode ? 'amount' : 'quantity')}</div>
-    <div class="sec"><div class="sublabel">Meal</div>${mealPills(s.meal)}</div>
+    ${ui.builderFor ? '' : `<div class="sec"><div class="sublabel">Meal</div>${mealPills(s.meal)}</div>`}
     ${labelBox(n)}
-    <button class="btn primary" data-act="add-food" id="addbtn">Add to ${s.meal} · ${fmt(n.kcal)} kcal</button>
-    <button class="link" style="width:100%" data-act="to-saved">Add to a saved meal…</button>`;
+    <button class="btn primary" data-act="add-food" id="addbtn">${addLabel(s, n)}</button>
+    ${ui.builderFor ? '' : '<button class="link" style="width:100%" data-act="to-saved">Add to a saved meal…</button>'}`;
 }
 function entrySheet(s){
   const e = s.entry;
@@ -508,11 +585,12 @@ function entrySheet(s){
 function quickSheet(s){
   const v = s.vals || {};
   const f = (id, lbl, unit, mode) => `<label>${lbl}${unit ? ' (' + unit + ')' : ''}<input class="inp" id="${id}" inputmode="${mode || 'decimal'}" value="${esc(v[id] ?? '')}"></label>`;
-  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>Quick add</h2><div class="note">For foods you already know the numbers for. Only calories are required.</div></div>
+  const bm = s.builderFor ? data.saved.find(x => x.id === s.builderFor) : null;
+  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>${bm ? 'Quick item' : 'Quick add'}</h2><div class="note">${bm ? 'Adds to “' + esc(bm.name) + '” only — not to your log.' : 'For foods you already know the numbers for.'} Only calories are required.</div></div>
     <div class="sec"><label>Name<input class="inp" id="qa-name" placeholder="e.g. Office birthday cake" value="${esc(v['qa-name'] ?? '')}"></label></div>
     <div class="form-grid" style="margin-bottom:16px">${f('qa-kcal','Calories','kcal','numeric')}${f('qa-protein','Protein','g')}${f('qa-carbs','Carbs','g')}${f('qa-fat','Fat','g')}</div>
-    <div class="sec"><div class="sublabel">Meal</div>${mealPills(s.meal)}</div>
-    <button class="btn primary" data-act="quick-save">Add to ${s.meal}</button>`;
+    ${bm ? '' : `<div class="sec"><div class="sublabel">Meal</div>${mealPills(s.meal)}</div>`}
+    <button class="btn primary" data-act="quick-save">Add to ${bm ? esc(bm.name) : s.meal}</button>`;
 }
 function toSavedSheet(s){
   const list = data.saved.map((m, i) => `<button class="row" data-act="to-saved-pick" data-i="${i}"><span class="t"><span class="n">${esc(m.name)}</span><span class="s">${m.items.length} item${m.items.length === 1 ? '' : 's'}</span></span><span class="k">${fmt(savedTotals(m).kcal)} kcal</span></button>`).join('');
@@ -523,11 +601,21 @@ function toSavedSheet(s){
     <button class="link" style="width:100%" data-act="back-to-food">Back</button>`;
 }
 function newSavedSheet(s){
+  const mode = s.mode || (s.pre ? 'log' : 'scratch');
+  const seg = `<div class="seg" role="group" aria-label="How to build it" style="margin-bottom:16px">
+    <button type="button" data-act="ns-mode" data-v="scratch" aria-pressed="${mode === 'scratch'}">Build from scratch</button>
+    <button type="button" data-act="ns-mode" data-v="log" aria-pressed="${mode === 'log'}">From a day’s log</button></div>`;
+  if(mode === 'scratch') return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>New saved meal</h2><div class="note">Nothing gets added to your log — you’ll add foods to the meal next.</div></div>
+    ${seg}
+    <div class="sec"><label>Name<input class="inp" id="newname" placeholder="e.g. My protein shake" value="${esc(s.name || '')}"></label></div>
+    <button class="btn primary" data-act="create-empty">Create & add foods</button>`;
   const es = (data.days[ui.date]?.entries || []);
   const rows = es.map(e => `<label class="check"><input type="checkbox" data-eid="${e.id}" ${s.pre && s.pre.includes(e.id) ? 'checked' : ''}><span style="flex:1">${esc(e.name)}<br><span class="note">${esc(e.items ? 'Saved meal' : servingText(e))} · ${e.meal}</span></span><span>${fmt(entryTotals(e).kcal)}</span></label>`).join('');
-  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>New saved meal</h2><div class="note">Pick foods from this day’s log to save together.</div></div>
+  const dlabel = ui.date === keyOf(new Date()) ? 'today’s' : dateFromKey(ui.date).toLocaleDateString('en-US', {month:'short', day:'numeric'}) + '’s';
+  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>New saved meal</h2><div class="note">Pick foods from ${dlabel} log to save together.</div></div>
+    ${seg}
     <div class="sec"><label>Name<input class="inp" id="newname" placeholder="e.g. Usual breakfast" value="${esc(s.name || '')}"></label></div>
-    ${rows ? `<div style="margin-bottom:16px">${rows}</div>` : `<div class="empty-box" style="margin:0 0 16px">Nothing logged on this day yet. Log foods first, or add foods to a saved meal from any food’s “Add to a saved meal…” link.</div>`}
+    ${rows ? `<div style="margin-bottom:16px">${rows}</div>` : `<div class="empty-box" style="margin:0 0 16px">Nothing logged on this day. Use “Build from scratch” instead.</div>`}
     <button class="btn primary" data-act="create-saved" ${rows ? '' : 'disabled'}>Save meal</button>`;
 }
 
@@ -551,7 +639,7 @@ function refreshPreview(){
   const box = document.getElementById('labelbox');
   if(box) box.outerHTML = labelBox(n);
   const btn = document.getElementById('addbtn');
-  if(btn) btn.textContent = `Add to ${s.meal} · ${fmt(n.kcal)} kcal`;
+  if(btn) btn.textContent = addLabel(s, n);
 }
 
 /* ---------- Saved meals ---------- */
@@ -568,7 +656,8 @@ function savedScreen(){
       <button class="icon-btn plain" data-act="rm-item" data-id="${m.id}" data-j="${j}" aria-label="Remove ${esc(it.name)}">${I.x}</button></div>`).join('');
     return `<div class="saved open">${head}<div class="saved-body">
       <div class="mac"><div><span>Protein</span><b>${r0(t.protein)} g</b></div><div><span>Carbs</span><b>${r0(t.carbs)} g</b></div><div><span>Fat</span><b>${r0(t.fat)} g</b></div></div>
-      <div>${items || '<div class="note">No items yet.</div>'}</div>
+      <div>${items || '<div class="note">No foods yet — add some below.</div>'}</div>
+      <div class="grid2" style="margin:0"><button class="btn" data-act="builder-search" data-id="${m.id}">${I.search} Search food</button><button class="btn" data-act="builder-quick" data-id="${m.id}">${I.bolt} Quick item</button></div>
       <div class="sublabel">Add to</div>${mealPills(ui.savedMeal || defaultMeal())}
       <button class="btn primary" data-act="use-saved" data-id="${m.id}" ${m.items.length ? '' : 'disabled'}>Add to ${ui.savedMeal || defaultMeal()}</button>
       <div class="grid2" style="margin:0"><button class="btn" data-act="rename-saved" data-id="${m.id}">Rename</button><button class="btn danger" data-act="del-saved" data-id="${m.id}">Delete</button></div>
@@ -578,7 +667,7 @@ function savedScreen(){
     <div class="screen-hd"><div class="top"><div><button class="icon-btn plain" data-act="close" aria-label="Back">${I.left}</button><h1>Saved meals</h1></div>
       <button class="btn dark" style="height:40px;border-radius:20px" data-act="new-saved">+ New</button></div></div>
     ${list || ''}
-    <div class="empty-box"><b style="color:var(--ink)">Make one from a day’s log</b><br>Tap “+ New” and pick foods you already logged. You can also use “Add to a saved meal…” when adding any food.</div>
+    <div class="empty-box"><b style="color:var(--ink)">Two ways to make one</b><br>Tap “+ New” to build a meal from scratch without logging it, or to save foods you already logged. You can also use “Add to a saved meal…” when adding any food.</div>
   </div>`;
 }
 
@@ -704,19 +793,24 @@ function itemFromFood(s){
   return {name: f.name, brand: f.brand, per: scale(f.base, sv.factor), qty: s.qty, servingLabel: sv.label, servingUnit: sv.unit, servingUnitMode: !!sv.unitMode,
     servingText: sv.unitMode ? fmtQty(s.qty) + ' ' + sv.unit : (s.qty === 1 ? sv.label : fmtQty(s.qty) + ' × ' + sv.label)};
 }
-function closeAll(){ ui.screen = null; ui.sheet = null; ui.addMeal = null; ui._focused = false; ui.search = {q:'', results:[], status:'idle', error:''}; renderAll(); }
+function backToSaved(){ ui.openSaved = ui.builderFor || ui.openSaved; ui.builderFor = null; ui.sheet = null; ui._focused = false; ui.search = {q:'', results:[], status:'idle', error:''}; ui.screen = 'saved'; renderLayer(); }
+function closeAll(){ ui.builderFor = null; ui.screen = null; ui.sheet = null; ui.addMeal = null; ui._focused = false; ui.search = {q:'', results:[], status:'idle', error:''}; renderAll(); }
 function renderAll(){ renderMain(); renderLayer(); }
 
 const actions = {
-  prev(){ const d = dateFromKey(ui.date); d.setDate(d.getDate() - 1); ui.date = keyOf(d); renderMain(); },
-  next(){ const d = dateFromKey(ui.date); d.setDate(d.getDate() + 1); if(keyOf(d) <= keyOf(new Date())){ ui.date = keyOf(d); renderMain(); } },
-  today(){ ui.date = keyOf(new Date()); renderMain(); },
+  prev(){ const d = dateFromKey(ui.date); d.setDate(d.getDate() - 1); if(d.getFullYear() === new Date().getFullYear()){ ui.date = keyOf(d); ui.calMonth = d.getMonth(); renderMain(); } },
+  next(){ const d = dateFromKey(ui.date); d.setDate(d.getDate() + 1); if(keyOf(d) <= keyOf(new Date())){ ui.date = keyOf(d); ui.calMonth = d.getMonth(); renderMain(); } },
+  today(){ ui.date = keyOf(new Date()); ui.calMonth = new Date().getMonth(); ui.calOpen = false; renderMain(); },
+  cal(){ ui.calOpen = !ui.calOpen; ui.calMonth = dateFromKey(ui.date).getMonth(); renderMain(); },
+  'cal-prev'(){ if(ui.calMonth > 0){ ui.calMonth--; renderMain(); } },
+  'cal-next'(){ if(ui.calMonth < 11){ ui.calMonth++; renderMain(); } },
+  'pick-day'(el){ ui.date = el.dataset.k; ui.calOpen = false; renderMain(); },
   'water+'(){ day(ui.date).water++; save(); renderMain(); },
   'water-'(){ const d = day(ui.date); d.water = Math.max(0, d.water - 1); save(); renderMain(); },
   cup(el){ const d = day(ui.date), i = +el.dataset.i; d.water = d.water === i + 1 ? i : i + 1; save(); renderMain(); },
   search(){ ui.addMeal = null; ui.screen = 'search'; renderLayer(); },
   'add-to'(el){ ui.addMeal = el.dataset.meal; ui.screen = 'search'; renderLayer(); },
-  close(){ closeAll(); },
+  close(){ if(ui.builderFor) backToSaved(); else closeAll(); },
   scrim(el, ev){ if(ev.target === el){ ui.sheet = null; renderLayer(); } },
   recent(el){ openFood(data.recents[+el.dataset.i]); },
   'pick-recent'(el){ openFood(data.recents[+el.dataset.i]); },
@@ -731,6 +825,10 @@ const actions = {
   'qty-'(){ const s = ui.sheet; const st = stepSize(); s.qty = Math.max(st, Math.round((s.qty - st) * 100) / 100); renderLayer(); },
   'add-food'(){
     const s = ui.sheet, it = itemFromFood(s);
+    if(ui.builderFor){
+      const m = builderMeal(); if(m){ m.items.push(it); remember(s.food, s.si, s.qty); save(); toast('Added to ' + m.name); }
+      backToSaved(); return;
+    }
     day(ui.date).entries.push({id: uid(), meal: s.meal, ...it, source: s.food.source, fdcId: s.food.fdcId || null, addedAt: Date.now()});
     remember(s.food, s.si, s.qty); save();
     toast(`Added to ${s.meal}`);
@@ -756,6 +854,11 @@ const actions = {
     const name = (v['qa-name'] || '').trim() || 'Quick add';
     const base = {kcal, protein: num('qa-protein'), carbs: num('qa-carbs'), fat: num('qa-fat')};
     const food = {source:'manual', name, brand:'', base, servings:[{label:'1 serving', factor:1}]};
+    if(ui.sheet.builderFor){
+      const m = data.saved.find(x => x.id === ui.sheet.builderFor);
+      if(m){ m.items.push({name, brand:'', per: scale(base, 1), qty: 1, servingLabel:'1 serving', servingText:'1 serving'}); remember(food, 0, 1); save(); toast('Added to ' + m.name); }
+      ui.sheet = null; renderLayer(); return;
+    }
     day(ui.date).entries.push({id: uid(), meal: ui.sheet.meal, name, per: scale(base, 1), qty: 1, servingLabel: '1 serving', source:'manual', addedAt: Date.now()});
     remember(food, 0, 1); save(); toast(`Added to ${ui.sheet.meal}`); closeAll();
   },
@@ -770,7 +873,16 @@ const actions = {
   'rename-saved'(el){ const m = data.saved.find(x => x.id === el.dataset.id); const n = prompt('Rename saved meal', m.name); if(n && n.trim()){ m.name = n.trim(); save(); renderLayer(); } },
   'del-saved'(el){ const i = data.saved.findIndex(x => x.id === el.dataset.id); const m = data.saved[i]; data.saved.splice(i, 1); save(); renderLayer();
     undoToast('Deleted ' + m.name, () => { data.saved.splice(i, 0, m); save(); renderLayer(); }); },
-  'new-saved'(){ ui.sheet = {type:'newSaved'}; renderLayer(); },
+  'new-saved'(){ ui.sheet = {type:'newSaved', mode:'scratch'}; renderLayer(); },
+  'ns-mode'(el){ const n = document.getElementById('newname'); if(n) ui.sheet.name = n.value; ui.sheet.mode = el.dataset.v; renderLayer(); },
+  'create-empty'(){
+    const name = document.getElementById('newname').value.trim();
+    if(!name){ toast('Give the meal a name'); return; }
+    const m = {id: uid(), name, items:[], uses:0};
+    data.saved.unshift(m); save(); ui.sheet = null; ui.openSaved = m.id; renderLayer();
+  },
+  'builder-search'(el){ ui.builderFor = el.dataset.id; ui._focused = false; ui.search = {q:'', results:[], status:'idle', error:''}; ui.screen = 'search'; renderLayer(); },
+  'builder-quick'(el){ ui.sheet = {type:'quick', builderFor: el.dataset.id, meal: defaultMeal(), vals:{}}; renderLayer(); },
   'create-saved'(){
     const name = document.getElementById('newname').value.trim();
     const ids = [...document.querySelectorAll('[data-eid]:checked')].map(c => c.dataset.eid);
@@ -831,13 +943,18 @@ document.addEventListener('visibilitychange', () => {
   // roll over to the new day if the app was left open overnight
   if(document.visibilityState === 'visible'){
     const t = keyOf(new Date());
-    if(ui.lastToday && ui.lastToday !== t && ui.date === ui.lastToday) ui.date = t;
+    if(ui.lastToday && ui.lastToday !== t){
+      if(ui.date === ui.lastToday || ui.date.slice(0,4) !== t.slice(0,4)) ui.date = t;
+      if(ui.lastToday.slice(0,4) !== t.slice(0,4)){ pruneOldYears(); ui.calMonth = new Date().getMonth(); }
+    }
     ui.lastToday = t;
     if(!ui.screen && !ui.sheet) renderMain();
   }
 });
 
+pruneOldYears();
 ui.lastToday = keyOf(new Date());
+ui.calMonth = new Date().getMonth();
 renderAll();
 if('serviceWorker' in navigator && location.protocol === 'https:'){
   navigator.serviceWorker.register('sw.js').catch(() => {});
