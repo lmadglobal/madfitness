@@ -259,7 +259,7 @@ function activeScreen(){
 function pickerScreen(s){
   return `<div class="screen" role="dialog" aria-label="${s.target ? 'Add exercise' : 'Exercise library'}">
     <div class="screen-hd">
-      <div class="top"><div><button class="icon-btn plain" data-act="w-back" aria-label="Back">${I.left}</button><h1>${s.target ? 'Add exercise' : 'Exercises'}</h1></div>
+      <div class="top"><div><button class="icon-btn plain" data-act="w-back" aria-label="Back">${I.left}</button><h1>${s.target === 'replace' ? 'Replace with…' : s.target ? 'Add exercise' : 'Exercises'}</h1></div>
         <button class="btn dark" style="height:40px;border-radius:20px" data-act="w-custom-ex">+ Custom</button></div>
       <div class="field"><span style="display:flex">${I.search}</span><label class="sr" for="pq">Filter exercises</label>
         <input id="pq" type="search" autocomplete="off" placeholder="Filter, e.g. press" value="${esc(s.q || '')}"></div>
@@ -351,7 +351,8 @@ function exerciseScreen(s){
       <span class="hs" style="color:var(--ink)">${x.sets.map(st => esc(setText(s.exId, st)) + (st.pr ? ' <span class="prt">PR</span>' : '')).join(' · ')}</span></div>`).join('');
   return `<div class="screen" role="dialog" aria-label="${esc(ex.name)}">
     <div class="screen-hd"><div class="top"><div><button class="icon-btn plain" data-act="w-back" aria-label="Back">${I.left}</button>
-      <div style="display:flex;flex-direction:column"><h1>${esc(ex.name)}</h1><span class="note">${esc(ex.equip)}${ex.muscle ? ' · ' + esc(ex.muscle) : ''} · ${sess.length} session${sess.length === 1 ? '' : 's'} this year</span></div></div></div></div>
+      <div style="display:flex;flex-direction:column"><h1>${esc(ex.name)}</h1><span class="note">${esc(ex.equip)}${ex.muscle ? ' · ' + esc(ex.muscle) : ''} · ${sess.length} session${sess.length === 1 ? '' : 's'} this year</span></div></div>
+      ${ex.custom ? `<button class="btn" style="height:40px;border-radius:20px" data-act="w-edit-custom" data-id="${ex.id}">Edit</button>` : ''}</div></div>
     <div class="wrap">
       <div class="stats3">${stats}</div>
       <section class="card" style="padding:16px">
@@ -362,7 +363,7 @@ function exerciseScreen(s){
       <h2 style="margin:6px 0 10px">History</h2>
       ${hist || '<div class="empty-box" style="margin:0 0 12px">No sessions logged this year yet.</div>'}
       ${bw ? '' : '<div class="note" style="margin-top:4px">Estimated 1-rep max uses the Epley formula on your best set each session. Records are kept across years.</div>'}
-      ${ex.custom ? '<button class="link" style="width:100%;color:var(--danger)" data-act="w-del-custom" data-id="' + ex.id + '">Delete custom exercise</button>' : ''}
+      ${ex.custom ? '<div class="grid2"><button class="btn" data-act="w-edit-custom" data-id="' + ex.id + '">Edit exercise</button><button class="btn danger" data-act="w-del-custom" data-id="' + ex.id + '">Delete</button></div>' : ''}
     </div>
   </div>`;
 }
@@ -379,16 +380,21 @@ function wScreenHTML(s){
 function wSheetHTML(s){
   if(s.type === 'cardioPick') return `<div class="grab"></div><div class="sec"><h2>Add cardio</h2></div>
     <div style="margin:0 -16px">${CARDIO_TYPES.map(t => `<button class="row" data-act="w-cardio-pick" data-v="${esc(t)}"><span class="n">${esc(t)}</span></button>`).join('')}</div>`;
-  if(s.type === 'customEx') return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>Custom exercise</h2><div class="note">It’s added to your library for future workouts too.</div></div>
-    <div class="sec"><label>Name<input class="inp" id="cx-name" value="${esc(s.name || '')}" placeholder="e.g. Smith machine incline"></label></div>
+  if(s.type === 'customEx'){
+    const ed = s.editId ? exById(s.editId) : null;
+    const opt = (list, cur) => list.map(v => `<option ${v === cur ? 'selected' : ''}>${v}</option>`).join('');
+    return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>${ed ? 'Edit exercise' : 'Custom exercise'}</h2><div class="note">${ed ? 'Changes show everywhere this exercise appears, including past workouts.' : 'It’s added to your library for future workouts too.'}</div></div>
+    <div class="sec"><label>Name<input class="inp" id="cx-name" value="${esc(ed ? ed.name : (s.name || ''))}" placeholder="e.g. Smith machine incline"></label></div>
     <div class="form-grid" style="margin-bottom:16px">
-      <label>Equipment<select class="inp" id="cx-equip">${EQUIP.map(e => `<option>${e}</option>`).join('')}</select></label>
-      <label>Muscle group<select class="inp" id="cx-muscle">${MUSCLES.concat(['Other']).map(m => `<option>${m}</option>`).join('')}</select></label></div>
-    <button class="btn primary" data-act="w-custom-save">Create${s.target ? ' & add' : ''}</button>`;
+      <label>Equipment<select class="inp" id="cx-equip">${opt(EQUIP, ed ? ed.equip : 'Barbell')}</select></label>
+      <label>Muscle group<select class="inp" id="cx-muscle">${opt(MUSCLES.concat(['Other']), ed ? ed.muscle : 'Chest')}</select></label></div>
+    <button class="btn primary" data-act="w-custom-save">${ed ? 'Save changes' : 'Create' + (s.target ? ' & add' : '')}</button>`;
+  }
   if(s.type === 'exMenu'){
     const a = data.active, x = a.exercises[s.ei], n = exById(x.exId).name;
     return `<div class="grab"></div><div class="sec"><h2>${esc(n)}</h2></div>
       <div class="grid2"><button class="btn" data-act="w-ex-move" data-d="-1" ${s.ei ? '' : 'disabled'}>Move up</button><button class="btn" data-act="w-ex-move" data-d="1" ${s.ei < a.exercises.length - 1 ? '' : 'disabled'}>Move down</button></div>
+      <button class="btn" style="width:100%;margin-bottom:10px" data-act="w-ex-replace">Replace exercise</button>
       <button class="btn" style="width:100%;margin-bottom:10px" data-act="w-ex-history" data-id="${x.exId}">View history & progress</button>
       <button class="btn danger" style="width:100%" data-act="w-ex-remove">Remove from workout</button>`;
   }
@@ -465,6 +471,16 @@ function routineFromWorkout(w){
     exercises: w.exercises.map(x => ({exId: x.exId, sets: x.sets.length})), lastUsed: null};
 }
 function addExerciseTo(target, exId){
+  if(target === 'replace'){
+    const a = data.active, i = ui.replaceEi, old = a.exercises[i];
+    if(!old) return;
+    const keep = JSON.parse(JSON.stringify(old));
+    // Same number of sets, fresh values: the new exercise's "Previous" numbers fill in as hints.
+    a.exercises[i] = {exId, sets: old.sets.map(() => ({w:'', r:'', done:false}))};
+    save();
+    setTimeout(() => undoToast(`Replaced ${exById(keep.exId).name} with ${exById(exId).name}`, () => { a.exercises[i] = keep; save(); renderLayer(); }), 0);
+    return;
+  }
   if(target === 'active'){ data.active.exercises.push({exId, sets: [{w:'', r:'', done:false}, {w:'', r:'', done:false}, {w:'', r:'', done:false}]}); save(); }
   else { const rs = ui.wstack.find(s => s.type === 'routine'); if(rs) rs.draft.exercises.push({exId, sets: 3}); }
 }
@@ -559,19 +575,25 @@ const W_ACTIONS = {
   'w-library'(){ ui.wstack = [{type:'picker', target: null, q:''}]; renderLayer(); },
   'w-pick-ex'(el){
     const s = wTop();
-    if(s.target){ addExerciseTo(s.target, el.dataset.id); ui.wstack.pop(); renderLayer(); toast('Added ' + exById(el.dataset.id).name); }
+    if(s.target){ addExerciseTo(s.target, el.dataset.id); ui.wstack.pop(); renderLayer(); if(s.target !== 'replace') toast('Added ' + exById(el.dataset.id).name); }
     else wPush({type:'exercise', exId: el.dataset.id, range:'3m'});
   },
   'w-custom-ex'(){ const s = wTop(); ui.sheet = {type:'customEx', target: s && s.target, name: (s && s.q) || ''}; renderLayer(); },
   'w-custom-save'(){
     const name = document.getElementById('cx-name').value.trim();
     if(!name){ toast('Give it a name'); return; }
+    if(ui.sheet.editId){
+      const ex = data.customEx.find(e => e.id === ui.sheet.editId);
+      if(ex){ ex.name = name; ex.equip = document.getElementById('cx-equip').value; ex.muscle = document.getElementById('cx-muscle').value; save(); toast('Exercise updated'); }
+      ui.sheet = null; renderLayer(); return;
+    }
     const ex = {id: 'c-' + uid(), name, equip: document.getElementById('cx-equip').value, muscle: document.getElementById('cx-muscle').value, custom: true};
     data.customEx = data.customEx || []; data.customEx.push(ex); save();
     const target = ui.sheet.target; ui.sheet = null;
-    if(target){ addExerciseTo(target, ex.id); ui.wstack.pop(); toast('Added ' + name); } else toast('Exercise created');
+    if(target){ addExerciseTo(target, ex.id); ui.wstack.pop(); if(target !== 'replace') toast('Added ' + name); } else toast('Exercise created');
     renderLayer();
   },
+  'w-edit-custom'(el){ ui.sheet = {type:'customEx', editId: el.dataset.id}; renderLayer(); },
   'w-del-custom'(el){
     const id = el.dataset.id, used = data.workouts.some(w => w.exercises.some(x => x.exId === id)) || data.routines.some(r => r.exercises.some(x => x.exId === id));
     if(!confirm(used ? 'This exercise is used in your history or routines. Delete it anyway? Past entries will show as “Removed exercise”.' : 'Delete this custom exercise?')) return;
@@ -583,6 +605,7 @@ const W_ACTIONS = {
   'w-range'(el){ wTop().range = el.dataset.v; renderLayer(); },
   'w-ex-menu'(el){ ui.sheet = {type:'exMenu', ei: +el.dataset.ex}; renderLayer(); },
   'w-ex-move'(el){ const a = data.active, i = ui.sheet.ei, j = i + (+el.dataset.d); [a.exercises[i], a.exercises[j]] = [a.exercises[j], a.exercises[i]]; save(); ui.sheet = null; renderLayer(); },
+  'w-ex-replace'(){ ui.replaceEi = ui.sheet.ei; ui.sheet = null; wPush({type:'picker', target:'replace', q:''}); },
   'w-ex-remove'(){ const a = data.active, i = ui.sheet.ei, x = a.exercises.splice(i, 1)[0]; save(); ui.sheet = null; renderLayer();
     undoToast('Removed ' + exById(x.exId).name, () => { a.exercises.splice(i, 0, x); save(); renderLayer(); }); },
   // routines

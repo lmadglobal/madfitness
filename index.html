@@ -756,17 +756,26 @@ function closeSheet(){ ui.sheet = null; renderLayer(); }
 function bindSheetDrag(){
   const sheet = document.querySelector('.sheet'), scrim = document.querySelector('.scrim');
   if(!sheet) return;
-  let y0 = null, t0 = 0, dy = 0, dragging = false;
+  let y0 = null, t0 = 0, dy = 0, dragging = false, onControl = false;
   sheet.addEventListener('touchstart', e => {
+    y0 = null;
     if(e.touches.length !== 1) return;
+    // Never treat touches on text boxes or dropdowns as a swipe, and don't swipe while the keyboard is up:
+    // when the keyboard opens or closes the page shifts under your finger, which used to look like a drag
+    // and cancelled the tap (that's why dropdowns sometimes wouldn't open).
+    if(e.target.closest('input, select, textarea, label')) return;
+    const f = document.activeElement;
+    if(f && f !== document.body && f.matches('input, select, textarea')) return;
     y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; dragging = false;
+    onControl = !!e.target.closest('button, a');
   }, {passive: true});
   sheet.addEventListener('touchmove', e => {
     if(y0 == null) return;
     const d = e.touches[0].clientY - y0;
     if(!dragging){
       // At the top and pulling down: stop iOS's own bounce from starting, so only the whole sheet moves.
-      if(d > 0 && sheet.scrollTop <= 0 && e.cancelable) e.preventDefault();
+      // On buttons, allow a few pixels of finger wobble so taps still register.
+      if(d > (onControl ? 6 : 0) && sheet.scrollTop <= 0 && e.cancelable) e.preventDefault();
       if(d > 8 && sheet.scrollTop <= 0){ dragging = true; y0 = e.touches[0].clientY; sheet.style.transition = 'none'; if(document.activeElement) document.activeElement.blur(); }
       else if(d < -8 || sheet.scrollTop > 0){ y0 = null; }
       return;
