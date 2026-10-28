@@ -229,6 +229,15 @@ details[open] summary svg{transform:rotate(180deg)}
 .stat span{font-size:12px;font-weight:600;color:var(--muted)}.stat b{font-size:21px;font-weight:800}
 .stat small{font-size:13px;font-weight:500;color:var(--muted)}
 .pr-box{background:var(--cheat-soft);color:var(--cheat-ink);border-radius:14px;padding:12px 14px;margin-bottom:14px;font-size:14px;line-height:1.6}
+.swipe-card{padding:0;overflow:hidden}
+.pager{display:flex;align-items:flex-start;transition:height .25s ease;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.pager::-webkit-scrollbar{display:none}
+.pane{flex:0 0 100%;min-width:0;scroll-snap-align:start;scroll-snap-stop:always;padding:20px 20px 8px}
+.pdots{display:flex;justify-content:center;gap:6px;padding:4px 0 14px}
+.pdots button{border:0;background:transparent;display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:16px;font-size:12px;font-weight:600;color:var(--muted)}
+.pdots button i{width:7px;height:7px;border-radius:4px;background:var(--border)}
+.pdots button[aria-current=true]{color:var(--ink);background:var(--chip)}
+.pdots button[aria-current=true] i{background:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:60;max-width:90vw;text-align:center}
 .note{font-size:13px;color:var(--muted);line-height:1.45}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -415,7 +424,7 @@ function renderDiet(){
 
   const app = document.getElementById('app');
   app.innerHTML = `<div class="wrap">
-    <div class="hdr"><h1>Diet</h1><button class="icon-btn" data-act="settings" aria-label="Goals and settings">${I.gear}</button></div>
+    <div class="hdr"><h1>Diet</h1><button class="icon-btn" data-act="settings" aria-label="Settings">${I.gear}</button></div>
     <div class="datebar">
       <button class="icon-btn plain" data-act="prev" aria-label="Previous day" ${k.slice(5) === '01-01' ? 'disabled style="opacity:.35"' : ''}>${I.left}</button>
       <button class="lbl" data-act="cal" aria-expanded="${!!ui.calOpen}">${label}${d.cheat ? ' <span class="badge">Cheat</span>' : ''}<span style="display:flex;color:var(--muted);transform:${ui.calOpen ? 'rotate(180deg)' : 'none'}">${I.chev}</span></button>
@@ -426,7 +435,9 @@ function renderDiet(){
       <label><input type="checkbox" id="cheat" ${d.cheat ? 'checked' : ''}> Cheat day</label>
       <span class="note">${lastCheatText()}</span>
     </div>
-    <section class="card" aria-label="Daily summary">
+    <section class="card swipe-card" aria-label="Daily summary and goals">
+     <div class="pager" id="pager">
+     <div class="pane" aria-label="Today">
       <div class="ring-row">${ring(t.kcal, g.kcal)}
         <div style="display:flex;flex-direction:column;gap:10px">
           <div><div class="label">Eaten</div><div class="big">${fmt(t.kcal)} <small>kcal</small></div></div>
@@ -441,6 +452,13 @@ function renderDiet(){
         </div>
         <button class="round" style="background:var(--water);color:#fff" data-act="water+" aria-label="Add a cup of water">${I.plus}</button>
       </div>
+     </div>
+     <div class="pane" aria-label="Daily goals">${goalsPane()}</div>
+     </div>
+     <div class="pdots" role="group" aria-label="Card view">
+       <button data-act="pane" data-i="0" aria-current="${!ui.pane}"><i></i>Today</button>
+       <button data-act="pane" data-i="1" aria-current="${ui.pane === 1}"><i></i>Goals</button>
+     </div>
     </section>
     <button class="search-btn" data-act="search"><span style="color:var(--ink);display:flex">${I.search}</span>Search foods — e.g. “Kiwi Snapple”</button>
     <div class="grid2">
@@ -455,6 +473,7 @@ function renderDiet(){
       <div style="padding-bottom:8px">${nrows}</div>
     </details>
   </div>`;
+  bindPager();
   document.getElementById('cheat').addEventListener('change', ev => {
     const dd = day(ui.date); dd.cheat = ev.target.checked; if(!dd.cheat) delete dd.cheat; save(); renderMain();
   });
@@ -644,6 +663,7 @@ function sheetHTML(){
   if(s.type === 'toSaved') return toSavedSheet(s);
   if(s.type === 'newSaved') return newSavedSheet(s);
   if(s.type === 'editItem') return editItemSheet(s);
+  if(s.type === 'calc') return calcSheet();
   return '';
 }
 function segButtons(list, cur, act){
@@ -856,35 +876,9 @@ function savedScreen(){
 
 /* ---------- Settings ---------- */
 function settingsScreen(){
-  const g = data.goals;
-  const f = (k, lbl, unit) => `<label>${lbl} (${unit})<input class="inp" data-goal="${k}" inputmode="numeric" value="${esc(g[k])}"></label>`;
-  const c = data.settings.calc || {};
   return `<div class="screen" role="dialog" aria-label="Settings">
-    <div class="screen-hd"><div class="top"><div><button class="icon-btn plain" data-act="close-settings" aria-label="Back">${I.left}</button><h1>Goals & settings</h1></div></div></div>
+    <div class="screen-hd"><div class="top"><div><button class="icon-btn plain" data-act="close-settings" aria-label="Back">${I.left}</button><h1>Settings</h1></div></div></div>
     <div class="wrap">
-      <section class="card"><h2 style="margin-bottom:14px">Daily goals</h2>
-        <div class="form-grid">${f('kcal','Calories','kcal')}${f('protein','Protein','g')}${f('carbs','Carbs','g')}${f('fat','Fat','g')}${f('water','Water','cups')}${f('fiber','Fiber','g')}${f('sodium','Sodium','mg')}</div>
-        <div class="note" id="macro-check" style="margin-top:10px"></div>
-      </section>
-      <details class="card">
-        <summary>Calculate my goals <span style="color:var(--muted);display:flex">${I.chev}</span></summary>
-        <div style="padding-bottom:16px">
-          <div class="note" style="margin-bottom:12px">An estimate from the Mifflin–St Jeor formula. It fills in the goals above; you can still adjust them.</div>
-          <div class="form-grid">
-            <label>Sex<select class="inp" id="c-sex"><option value="m" ${c.sex !== 'f' ? 'selected' : ''}>Male</option><option value="f" ${c.sex === 'f' ? 'selected' : ''}>Female</option></select></label>
-            <label>Age<input class="inp" id="c-age" inputmode="numeric" value="${esc(c.age ?? '')}"></label>
-            <label>Height (ft)<input class="inp" id="c-ft" inputmode="numeric" value="${esc(c.ft ?? '')}"></label>
-            <label>Height (in)<input class="inp" id="c-in" inputmode="numeric" value="${esc(c.inch ?? '')}"></label>
-            <label>Weight (lb)<input class="inp" id="c-lb" inputmode="decimal" value="${esc(c.lb ?? '')}"></label>
-            <label>Activity<select class="inp" id="c-act">
-              ${[['1.2','Mostly sitting'],['1.375','Light (1–3 workouts/wk)'],['1.55','Moderate (3–5/wk)'],['1.725','Very active (6–7/wk)']].map(([v, l]) => `<option value="${v}" ${String(c.act || '1.55') === v ? 'selected' : ''}>${l}</option>`).join('')}
-            </select></label>
-          </div>
-          <div class="sec" style="margin-top:12px"><div class="sublabel">Goal</div>
-            <div class="seg" role="group" aria-label="Goal">${[['cut','Lose (−500)'],['keep','Maintain'],['bulk','Gain (+300)']].map(([v, l]) => `<button type="button" data-act="c-goal" data-v="${v}" aria-pressed="${(c.goal || 'keep') === v}">${l}</button>`).join('')}</div></div>
-          <button class="btn dark" style="width:100%" data-act="calc">Calculate & fill goals</button>
-        </div>
-      </details>
       <section class="card"><h2 style="margin-bottom:8px">Workouts</h2>
         <label class="sublabel" style="display:flex;flex-direction:column;gap:6px">Rest timer after each set (seconds)<input class="inp" id="restsec" inputmode="numeric" value="${esc(data.settings.rest || 90)}"></label>
       </section>
@@ -900,23 +894,74 @@ function settingsScreen(){
     </div>
   </div>`;
 }
+/* ---------- Goals pane (swipe left on the summary card) ---------- */
+function goalsPane(){
+  const g = data.goals;
+  const f = (k, lbl, unit) => `<label>${lbl} (${unit})<input class="inp" data-goal="${k}" inputmode="numeric" value="${esc(g[k])}"></label>`;
+  return `<div class="sec-hd" style="margin-bottom:12px"><h2 style="font-size:18px">Daily goals</h2><span class="note">Saved automatically</span></div>
+    <div class="form-grid">${f('kcal','Calories','kcal')}${f('protein','Protein','g')}${f('carbs','Carbs','g')}${f('fat','Fat','g')}${f('water','Water','cups')}${f('fiber','Fiber','g')}${f('sodium','Sodium','mg')}</div>
+    <div class="note" id="macro-check" style="margin:10px 0 12px">${macroCheckText()}</div>
+    <button class="btn dark" style="width:100%;margin-bottom:8px" data-act="open-calc">Calculate goals</button>`;
+}
+function bindPager(){
+  const pg = document.getElementById('pager');
+  if(!pg) return;
+  pg.scrollLeft = ui.pane === 1 ? pg.clientWidth : 0;
+  // The card takes the height of whichever side is showing (Today is shorter than Goals).
+  const fit = i => { const pane = pg.children[i]; if(pane) pg.style.height = pane.offsetHeight + 'px'; };
+  fit(ui.pane || 0);
+  let t;
+  pg.addEventListener('scroll', () => {
+    const tallest = Math.max(pg.children[0].offsetHeight, pg.children[1].offsetHeight);
+    if(pg.scrollLeft > 2 && pg.scrollLeft < pg.clientWidth - 2 && pg.offsetHeight < tallest) pg.style.height = tallest + 'px';
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const i = Math.round(pg.scrollLeft / pg.clientWidth);
+      document.querySelectorAll('.pdots button').forEach((b, j) => b.setAttribute('aria-current', j === i));
+      fit(i);
+      if(i !== (ui.pane || 0)){
+        ui.pane = i;
+        // Goals changed while on the Goals side: refresh the summary once you swipe back.
+        if(i === 0 && ui.goalsDirty){ ui.goalsDirty = false; renderMain(); }
+      }
+    }, 120);
+  }, {passive: true});
+}
+function saveGoalInput(inp){
+  const v = parseFloat(inp.value);
+  if(!isNaN(v) && v >= 0){ data.goals[inp.dataset.goal] = v; save(); ui.goalsDirty = true; }
+  else inp.value = data.goals[inp.dataset.goal];
+}
 function readGoals(){
-  document.querySelectorAll('[data-goal]').forEach(inp => {
-    const v = parseFloat(inp.value);
-    if(!isNaN(v) && v >= 0) data.goals[inp.dataset.goal] = v;
-  });
   const rs = document.getElementById('restsec');
   if(rs){ const v = parseInt(rs.value, 10); if(v >= 5 && v <= 900) data.settings.rest = v; }
   const k = document.getElementById('apikey');
   if(k) data.settings.apiKey = k.value.trim();
   save();
 }
-function macroCheck(){
-  const el = document.getElementById('macro-check');
-  if(!el) return;
-  const val = k => parseFloat(document.querySelector(`[data-goal="${k}"]`)?.value) || 0;
+function macroCheckText(){
+  const val = k => { const i = document.querySelector(`[data-goal="${k}"]`); return parseFloat(i ? i.value : data.goals[k]) || 0; };
   const fromMacros = val('protein') * 4 + val('carbs') * 4 + val('fat') * 9;
-  el.textContent = `Your macro goals add up to about ${fmt(fromMacros)} kcal` + (Math.abs(fromMacros - val('kcal')) > 100 ? ` — ${fromMacros > val('kcal') ? 'more' : 'less'} than your calorie goal.` : '.');
+  return `Your macro goals add up to about ${fmt(fromMacros)} kcal` + (Math.abs(fromMacros - val('kcal')) > 100 ? ` — ${fromMacros > val('kcal') ? 'more' : 'less'} than your calorie goal.` : '.');
+}
+function macroCheck(){ const el = document.getElementById('macro-check'); if(el) el.textContent = macroCheckText(); }
+function calcSheet(){
+  const c = data.settings.calc || {};
+  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>Calculate goals</h2>
+      <div class="note">An estimate from the Mifflin–St Jeor formula. It replaces your calorie and macro goals; you can still adjust them after.</div></div>
+    <div class="form-grid">
+      <label>Sex<select class="inp" id="c-sex"><option value="m" ${c.sex !== 'f' ? 'selected' : ''}>Male</option><option value="f" ${c.sex === 'f' ? 'selected' : ''}>Female</option></select></label>
+      <label>Age<input class="inp" id="c-age" inputmode="numeric" value="${esc(c.age ?? '')}"></label>
+      <label>Height (ft)<input class="inp" id="c-ft" inputmode="numeric" value="${esc(c.ft ?? '')}"></label>
+      <label>Height (in)<input class="inp" id="c-in" inputmode="numeric" value="${esc(c.inch ?? '')}"></label>
+      <label>Weight (lb)<input class="inp" id="c-lb" inputmode="decimal" value="${esc(c.lb ?? '')}"></label>
+      <label>Activity<select class="inp" id="c-act">
+        ${[['1.2','Mostly sitting'],['1.375','Light (1–3 workouts/wk)'],['1.55','Moderate (3–5/wk)'],['1.725','Very active (6–7/wk)']].map(([v, l]) => `<option value="${v}" ${String(c.act || '1.55') === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select></label>
+    </div>
+    <div class="sec" style="margin-top:12px"><div class="sublabel">Goal</div>
+      <div class="seg" role="group" aria-label="Goal">${[['cut','Lose (−500)'],['keep','Maintain'],['bulk','Gain (+300)']].map(([v, l]) => `<button type="button" data-act="c-goal" data-v="${v}" aria-pressed="${(c.goal || 'keep') === v}">${l}</button>`).join('')}</div></div>
+    <button class="btn primary" data-act="calc">Calculate & update goals</button>`;
 }
 function calculate(){
   const c = data.settings.calc = data.settings.calc || {};
@@ -935,11 +980,10 @@ function calculate(){
   const protein = Math.round(c.lb * 0.8);
   const fat = Math.round(kcal * 0.25 / 9);
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
-  const set = (k, v) => { const i = document.querySelector(`[data-goal="${k}"]`); if(i) i.value = v; };
-  set('kcal', kcal); set('protein', protein); set('fat', fat); set('carbs', carbs);
-  save(); macroCheck();
-  toast('Goals filled in — tap Save to keep them');
-  document.querySelector('.screen').scrollTo({top:0, behavior:'smooth'});
+  Object.assign(data.goals, {kcal, protein, fat, carbs});
+  save(); ui.sheet = null; ui.pane = 1; ui.goalsDirty = false;
+  renderAll();
+  toast(`Goals updated: ${fmt(kcal)} kcal`);
 }
 async function exportData(){
   const json = JSON.stringify(data, null, 1);
@@ -1105,7 +1149,12 @@ const actions = {
     const m = {id: uid(), name, items, uses:0};
     data.saved.unshift(m); save(); ui.sheet = null; ui.openSaved = m.id; toast('Saved meal created'); renderLayer();
   },
-  settings(){ ui.screen = 'settings'; renderLayer(); macroCheck(); },
+  settings(){ ui.screen = 'settings'; renderLayer(); },
+  'open-calc'(){ ui.sheet = {type:'calc'}; renderLayer(); },
+  pane(el){ const pg = document.getElementById('pager'); if(!pg) return; const i = +el.dataset.i;
+    // Grow first when heading to the taller side, so the content isn't clipped mid-slide.
+    if(i === 1) pg.style.height = Math.max(pg.offsetHeight, pg.children[1].offsetHeight) + 'px';
+    pg.scrollTo({left: i * pg.clientWidth, behavior:'smooth'}); },
   'close-settings'(){ readGoals(); ui.screen = null; renderAll(); },
   'c-goal'(el){ data.settings.calc = data.settings.calc || {}; data.settings.calc.goal = el.dataset.v;
     document.querySelectorAll('[data-act="c-goal"]').forEach(b => b.setAttribute('aria-pressed', b === el)); save(); },
@@ -1148,6 +1197,7 @@ document.addEventListener('input', ev => {
   if(ev.target.id === 'it-qty' || (ev.target.dataset && ev.target.dataset.nut)) itemTotalNote();
 });
 document.addEventListener('change', ev => {
+  if(ev.target.dataset && ev.target.dataset.goal){ saveGoalInput(ev.target); macroCheck(); }
   if(ev.target.id === 'importfile' && ev.target.files[0]) importData(ev.target.files[0]);
 });
 document.addEventListener('visibilitychange', () => {
