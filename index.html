@@ -230,9 +230,10 @@ details[open] summary svg{transform:rotate(180deg)}
 .stat small{font-size:13px;font-weight:500;color:var(--muted)}
 .pr-box{background:var(--cheat-soft);color:var(--cheat-ink);border-radius:14px;padding:12px 14px;margin-bottom:14px;font-size:14px;line-height:1.6}
 .swipe-card{padding:0;overflow:hidden}
-.pager{display:flex;align-items:flex-start;transition:height .25s ease;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.pager::-webkit-scrollbar{display:none}
-.pane{flex:0 0 100%;min-width:0;scroll-snap-align:start;scroll-snap-stop:always;padding:20px 20px 8px}
+.pager{overflow:hidden;position:relative;touch-action:pan-y}
+.ptrack{display:flex;align-items:flex-start;will-change:transform}
+.pane{flex:0 0 100%;min-width:0;padding:20px 20px 8px;transform-origin:top center}
+.pager.anim,.pager.anim .ptrack,.pager.anim .pane{transition:height .3s cubic-bezier(.2,.8,.2,1),transform .3s cubic-bezier(.2,.8,.2,1)}
 .pdots{display:flex;justify-content:center;gap:6px;padding:4px 0 14px}
 .pdots button{border:0;background:transparent;display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:16px;font-size:12px;font-weight:600;color:var(--muted)}
 .pdots button i{width:7px;height:7px;border-radius:4px;background:var(--border)}
@@ -436,7 +437,7 @@ function renderDiet(){
       <span class="note">${lastCheatText()}</span>
     </div>
     <section class="card swipe-card" aria-label="Daily summary and goals">
-     <div class="pager" id="pager">
+     <div class="pager" id="pager"><div class="ptrack">
      <div class="pane" aria-label="Today">
       <div class="ring-row">${ring(t.kcal, g.kcal)}
         <div style="display:flex;flex-direction:column;gap:10px">
@@ -454,7 +455,7 @@ function renderDiet(){
       </div>
      </div>
      <div class="pane" aria-label="Daily goals">${goalsPane()}</div>
-     </div>
+     </div></div>
      <div class="pdots" role="group" aria-label="Card view">
        <button data-act="pane" data-i="0" aria-current="${!ui.pane}"><i></i>Today</button>
        <button data-act="pane" data-i="1" aria-current="${ui.pane === 1}"><i></i>Goals</button>
@@ -903,29 +904,68 @@ function goalsPane(){
     <div class="note" id="macro-check" style="margin:10px 0 12px">${macroCheckText()}</div>
     <button class="btn dark" style="width:100%;margin-bottom:8px" data-act="open-calc">Calculate goals</button>`;
 }
+/* Summary card ⇄ Goals: a finger-driven slide. As you swipe, the card's height moves between the two
+   sides' heights, and the Goals side is squished vertically to fit until it's fully in view. */
+let pagerApi = null;
 function bindPager(){
   const pg = document.getElementById('pager');
-  if(!pg) return;
-  pg.scrollLeft = ui.pane === 1 ? pg.clientWidth : 0;
-  // The card takes the height of whichever side is showing (Today is shorter than Goals).
-  const fit = i => { const pane = pg.children[i]; if(pane) pg.style.height = pane.offsetHeight + 'px'; };
-  fit(ui.pane || 0);
-  let t;
-  pg.addEventListener('scroll', () => {
-    const tallest = Math.max(pg.children[0].offsetHeight, pg.children[1].offsetHeight);
-    if(pg.scrollLeft > 2 && pg.scrollLeft < pg.clientWidth - 2 && pg.offsetHeight < tallest) pg.style.height = tallest + 'px';
-    clearTimeout(t);
-    t = setTimeout(() => {
-      const i = Math.round(pg.scrollLeft / pg.clientWidth);
-      document.querySelectorAll('.pdots button').forEach((b, j) => b.setAttribute('aria-current', j === i));
-      fit(i);
-      if(i !== (ui.pane || 0)){
-        ui.pane = i;
-        // Goals changed while on the Goals side: refresh the summary once you swipe back.
-        if(i === 0 && ui.goalsDirty){ ui.goalsDirty = false; renderMain(); }
-      }
-    }, 120);
+  if(!pg){ pagerApi = null; return; }
+  const track = pg.firstElementChild, [pA, pB] = track.children;
+  let p = ui.pane === 1 ? 1 : 0;          // 0 = Today, 1 = Goals (fractions while swiping)
+  const heights = () => [pA.offsetHeight, pB.offsetHeight];
+  function apply(v){
+    const [hA, hB] = heights(), h = hA + (hB - hA) * v;
+    track.style.transform = `translateX(${-v * 100}%)`;
+    pg.style.height = h + 'px';
+    pB.style.transform = h < hB ? `scaleY(${(h / hB).toFixed(4)})` : '';
+    pA.style.transform = h < hA ? `scaleY(${(h / hA).toFixed(4)})` : '';
+  }
+  function settle(target){
+    pg.classList.add('anim');
+    p = target; apply(p);
+    const done = () => { pg.classList.remove('anim'); pg.removeEventListener('transitionend', done); };
+    pg.addEventListener('transitionend', done); setTimeout(done, 400);
+    document.querySelectorAll('.pdots button').forEach((b, j) => b.setAttribute('aria-current', j === target));
+    if(target !== (ui.pane || 0)){
+      ui.pane = target;
+      if(document.activeElement && pg.contains(document.activeElement)) document.activeElement.blur();
+      if(target === 0 && ui.goalsDirty){ ui.goalsDirty = false; setTimeout(renderMain, 320); }
+    }
+  }
+  apply(p);
+  let x0 = null, y0 = 0, t0 = 0, mode = null, start = 0;
+  pg.addEventListener('touchstart', e => {
+    if(e.touches.length !== 1){ x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); mode = null; start = p;
   }, {passive: true});
+  pg.addEventListener('touchmove', e => {
+    if(x0 == null) return;
+    const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+    if(!mode){
+      if(Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      mode = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';   // lock to one direction for the whole gesture
+      if(mode === 'x'){ pg.classList.remove('anim'); x0 = e.touches[0].clientX; if(document.activeElement && pg.contains(document.activeElement)) document.activeElement.blur(); }
+    }
+    if(mode !== 'x') return;
+    if(e.cancelable) e.preventDefault();
+    let v = start - (e.touches[0].clientX - x0) / pg.clientWidth;
+    if(v < 0) v = v / 3; else if(v > 1) v = 1 + (v - 1) / 3;   // a little resistance past the ends
+    p = Math.max(-0.15, Math.min(1.15, v));
+    apply(Math.max(0, Math.min(1, p)));
+    track.style.transform = `translateX(${-p * 100}%)`;
+  }, {passive: false});
+  const end = e => {
+    if(x0 == null) return;
+    const wasX = mode === 'x'; x0 = null; mode = null;
+    if(!wasX) return;
+    const moved = p - start, speed = Math.abs(moved) * pg.clientWidth / Math.max(1, Date.now() - t0);
+    let target = Math.abs(moved) > 0.3 ? (moved > 0 ? 1 : 0) : start;   // past ~a third of the way: switch
+    if(speed > 0.4 && Math.abs(moved) > 0.05) target = moved > 0 ? 1 : 0;   // a quick flick always switches
+    settle(target);
+  };
+  pg.addEventListener('touchend', end);
+  pg.addEventListener('touchcancel', end);
+  pagerApi = {go: settle};
 }
 function saveGoalInput(inp){
   const v = parseFloat(inp.value);
@@ -1151,10 +1191,7 @@ const actions = {
   },
   settings(){ ui.screen = 'settings'; renderLayer(); },
   'open-calc'(){ ui.sheet = {type:'calc'}; renderLayer(); },
-  pane(el){ const pg = document.getElementById('pager'); if(!pg) return; const i = +el.dataset.i;
-    // Grow first when heading to the taller side, so the content isn't clipped mid-slide.
-    if(i === 1) pg.style.height = Math.max(pg.offsetHeight, pg.children[1].offsetHeight) + 'px';
-    pg.scrollTo({left: i * pg.clientWidth, behavior:'smooth'}); },
+  pane(el){ if(pagerApi) pagerApi.go(+el.dataset.i); },
   'close-settings'(){ readGoals(); ui.screen = null; renderAll(); },
   'c-goal'(el){ data.settings.calc = data.settings.calc || {}; data.settings.calc.goal = el.dataset.v;
     document.querySelectorAll('[data-act="c-goal"]').forEach(b => b.setAttribute('aria-pressed', b === el)); save(); },
