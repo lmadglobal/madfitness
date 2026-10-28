@@ -524,7 +524,7 @@ function wOnInput(ev){
 
 /* ---------- actions ---------- */
 const W_ACTIONS = {
-  'tab'(el){ ui.tab = el.dataset.tab; data.settings.tab = ui.tab; save(); window.scrollTo(0, 0); renderAll(); },
+  'tab'(el){ ui.tab = el.dataset.tab; data.settings.tab = ui.tab; save(); window.scrollTo(0, 0); renderAll(); if(ui.tab === 'health') refreshHealth(false); },
   'w-start'(){ if(!data.active){ data.active = newActive('Workout'); save(); } ui.wstack = [{type:'active'}]; renderLayer(); },
   'w-resume'(){ ui.tab = 'workouts'; ui.wstack = [{type:'active'}]; renderAll(); },
   'w-minimize'(){ ui.wstack = []; renderAll(); },

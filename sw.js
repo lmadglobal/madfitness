@@ -1,7 +1,7 @@
 // Caches the app so it opens instantly and works offline.
 // Bump VERSION whenever you upload new app files.
-const VERSION = 'fitness-v9';
-const SHELL = ['./', './index.html', './workouts.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
+const VERSION = 'fitness-v11';
+const SHELL = ['./', './index.html', './workouts.js', './health.js', './setup.sql', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
