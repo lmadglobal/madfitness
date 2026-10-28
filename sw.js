@@ -1,6 +1,6 @@
 // Caches the app so it opens instantly and works offline.
 // Bump VERSION whenever you upload new app files.
-const VERSION = 'fitness-v2';
+const VERSION = 'fitness-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

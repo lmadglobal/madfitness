@@ -85,7 +85,7 @@ details[open] summary svg{transform:rotate(180deg)}
 .nrow{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:15px}
 .nrow span:last-child{color:var(--muted)}
 /* Screens & sheets */
-.screen{position:fixed;inset:0;background:var(--bg);z-index:20;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-top:env(safe-area-inset-top)}
+.screen{position:fixed;inset:0;background:var(--bg);z-index:20;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-top:env(safe-area-inset-top)}
 .screen-hd{position:sticky;top:0;background:var(--bg);z-index:2;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
 .screen-hd .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .screen-hd .top>div{display:flex;align-items:center;gap:4px}
@@ -93,7 +93,10 @@ details[open] summary svg{transform:rotate(180deg)}
 .field{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;background:var(--card);border:1.5px solid var(--ink);border-radius:14px}
 .field input{flex:1;border:0;outline:none;font-size:16px;background:transparent;min-width:0}
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--card);width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;overscroll-behavior:contain;will-change:transform}
+.scrim{transition:background .2s}
+.item-edit{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;border:0;background:transparent;text-align:left;padding:6px 0;min-height:48px}
+.item-edit .s{font-size:13px;color:var(--muted)}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--border);margin:4px auto 12px}
 .sec{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .sublabel{font-size:13px;font-weight:600;color:var(--muted)}
@@ -511,7 +514,7 @@ function renderLayer(){
     const inp = document.getElementById('q');
     if(inp && !ui.sheet && !ui._focused){ inp.focus(); ui._focused = true; }
   }
-  if(ui.sheet) bindSheet();
+  if(ui.sheet){ bindSheet(); bindSheetDrag(); }
 }
 function searchScreen(){
   return `<div class="screen" role="dialog" aria-label="Add food">
@@ -534,6 +537,7 @@ function sheetHTML(){
   if(s.type === 'quick') return quickSheet(s);
   if(s.type === 'toSaved') return toSavedSheet(s);
   if(s.type === 'newSaved') return newSavedSheet(s);
+  if(s.type === 'editItem') return editItemSheet(s);
   return '';
 }
 function segButtons(list, cur, act){
@@ -600,6 +604,28 @@ function toSavedSheet(s){
     <button class="btn primary" data-act="to-saved-new">Create & add</button>
     <button class="link" style="width:100%" data-act="back-to-food">Back</button>`;
 }
+const EDIT_FIELDS = [['kcal','Calories','kcal'],['protein','Protein','g'],['carbs','Carbs','g'],['fat','Fat','g'],['fiber','Fiber','g'],['sugar','Sugar','g'],['sodium','Sodium','mg'],['satfat','Saturated fat','g'],['chol','Cholesterol','mg'],['potassium','Potassium','mg']];
+function editItemSheet(s){
+  const m = data.saved.find(x => x.id === s.id), it = m && m.items[s.j];
+  if(!it) return '';
+  const unit = it.servingUnitMode ? (it.servingUnit || 'g') : null;
+  const fields = EDIT_FIELDS.map(([k, lbl, u]) => `<label>${lbl} (${u})<input class="inp" data-nut="${k}" inputmode="decimal" value="${r1(it.per[k] || 0)}"></label>`).join('');
+  return `<div class="grab"></div><div class="sec" style="gap:2px"><h2>Edit item</h2><div class="note">In “${esc(m.name)}”. Changes apply to this saved meal only, not to days you already logged.</div></div>
+    <div class="sec"><label>Name<input class="inp" id="it-name" value="${esc(it.name)}"></label></div>
+    <div class="sec" style="flex-direction:row;justify-content:space-between;align-items:center"><div class="sublabel">${unit ? 'Amount (' + esc(unit) + ')' : 'Servings' + (it.servingLabel && it.servingLabel !== '1 serving' ? ' · ' + esc(it.servingLabel) : '')}</div>
+      <input class="inp" id="it-qty" inputmode="decimal" style="width:96px;text-align:center;font-weight:700" value="${fmtQty(it.qty || 1)}"></div>
+    <div class="sublabel" style="margin-bottom:8px">Nutrition ${unit ? 'per 1 ' + esc(unit) : 'per serving'}</div>
+    <div class="form-grid" style="margin-bottom:12px">${fields}</div>
+    <div class="note" id="it-total" style="margin-bottom:16px"></div>
+    <button class="btn primary" data-act="save-item">Save item</button>
+    <button class="link" style="width:100%;color:var(--danger)" data-act="del-item">Remove from meal</button>`;
+}
+function itemTotalNote(){
+  const el = document.getElementById('it-total'); if(!el) return;
+  const q = parseFloat((document.getElementById('it-qty').value || '').replace(',', '.')) || 0;
+  const v = k => parseFloat((document.querySelector(`[data-nut="${k}"]`)?.value || '').replace(',', '.')) || 0;
+  el.textContent = `Item total: ${fmt(v('kcal') * q)} kcal · ${r1(v('protein') * q)} g protein · ${r1(v('carbs') * q)} g carbs · ${r1(v('fat') * q)} g fat`;
+}
 function newSavedSheet(s){
   const mode = s.mode || (s.pre ? 'log' : 'scratch');
   const seg = `<div class="seg" role="group" aria-label="How to build it" style="margin-bottom:16px">
@@ -619,6 +645,46 @@ function newSavedSheet(s){
     <button class="btn primary" data-act="create-saved" ${rows ? '' : 'disabled'}>Save meal</button>`;
 }
 
+/* Swipe down to close: drags the whole sheet when it's scrolled to the top */
+function closeSheet(){ ui.sheet = null; renderLayer(); }
+function bindSheetDrag(){
+  const sheet = document.querySelector('.sheet'), scrim = document.querySelector('.scrim');
+  if(!sheet) return;
+  let y0 = null, t0 = 0, dy = 0, dragging = false;
+  sheet.addEventListener('touchstart', e => {
+    if(e.touches.length !== 1) return;
+    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; dragging = false;
+  }, {passive: true});
+  sheet.addEventListener('touchmove', e => {
+    if(y0 == null) return;
+    const d = e.touches[0].clientY - y0;
+    if(!dragging){
+      if(d > 8 && sheet.scrollTop <= 0){ dragging = true; y0 = e.touches[0].clientY; sheet.style.transition = 'none'; if(document.activeElement) document.activeElement.blur(); }
+      else if(d < -8 || sheet.scrollTop > 0){ y0 = null; }
+      return;
+    }
+    e.preventDefault();
+    dy = Math.max(0, d);
+    sheet.style.transform = `translateY(${dy}px)`;
+    scrim.style.background = `rgba(0,0,0,${(0.4 * Math.max(0, 1 - dy / 400)).toFixed(3)})`;
+  }, {passive: false});
+  const end = () => {
+    if(!dragging){ y0 = null; return; }
+    const v = dy / Math.max(1, Date.now() - t0);
+    sheet.style.transition = 'transform .22s ease-out';
+    if(dy > 120 || (dy > 40 && v > 0.6)){
+      sheet.style.transform = 'translateY(100%)';
+      scrim.style.background = 'rgba(0,0,0,0)';
+      setTimeout(closeSheet, 200);
+    } else {
+      sheet.style.transform = '';
+      scrim.style.background = '';
+    }
+    y0 = null; dragging = false;
+  };
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
+}
 /* live updates inside sheets without re-rendering inputs */
 function bindSheet(){
   const q = document.getElementById('qty');
@@ -652,7 +718,7 @@ function savedScreen(){
       <span class="s">${m.items.length} item${m.items.length === 1 ? '' : 's'}${m.uses ? ' · used ' + m.uses + ' time' + (m.uses === 1 ? '' : 's') : ''}</span></span>
       <span class="k" style="font-weight:${open ? 800 : 600}">${fmt(t.kcal)} kcal</span></button>`;
     if(!open) return `<div class="saved">${head}</div>`;
-    const items = m.items.map((it, j) => `<div class="item"><span class="t"><span>${esc(it.name)}</span><span class="s">${esc(it.servingText || '')} · ${fmt(it.per.kcal * (it.qty || 1))} kcal</span></span>
+    const items = m.items.map((it, j) => `<div class="item"><button class="item-edit" data-act="edit-item" data-id="${m.id}" data-j="${j}" aria-label="Edit ${esc(it.name)}"><span>${esc(it.name)}</span><span class="s">${esc(it.servingText || '')} · ${fmt(it.per.kcal * (it.qty || 1))} kcal · tap to edit</span></button>
       <button class="icon-btn plain" data-act="rm-item" data-id="${m.id}" data-j="${j}" aria-label="Remove ${esc(it.name)}">${I.x}</button></div>`).join('');
     return `<div class="saved open">${head}<div class="saved-body">
       <div class="mac"><div><span>Protein</span><b>${r0(t.protein)} g</b></div><div><span>Carbs</span><b>${r0(t.carbs)} g</b></div><div><span>Fat</span><b>${r0(t.fat)} g</b></div></div>
@@ -869,6 +935,26 @@ const actions = {
     day(ui.date).entries.push({id: uid(), meal, name: m.name, per: savedTotals(m), qty: 1, servingLabel:'1 serving', items: JSON.parse(JSON.stringify(m.items)), savedId: m.id, addedAt: Date.now()});
     m.uses = (m.uses || 0) + 1; save(); toast(`${m.name} added to ${meal}`); closeAll();
   },
+  'edit-item'(el){ ui.sheet = {type:'editItem', id: el.dataset.id, j: +el.dataset.j}; renderLayer(); itemTotalNote(); },
+  'save-item'(){
+    const s = ui.sheet, m = data.saved.find(x => x.id === s.id), it = m && m.items[s.j];
+    if(!it) return;
+    const num = v => parseFloat(String(v || '').replace(',', '.'));
+    const q = num(document.getElementById('it-qty').value);
+    if(!(q > 0)){ toast('Enter an amount above 0'); return; }
+    const name = document.getElementById('it-name').value.trim();
+    if(name) it.name = name;
+    it.qty = q;
+    const per = {};
+    document.querySelectorAll('[data-nut]').forEach(i => { const v = num(i.value); per[i.dataset.nut] = isNaN(v) || v < 0 ? 0 : v; });
+    it.per = per;
+    const lbl = it.servingLabel || '1 serving';
+    it.servingText = it.servingUnitMode ? fmtQty(q) + ' ' + (it.servingUnit || 'g')
+      : lbl === '1 serving' ? (q === 1 ? '1 serving' : fmtQty(q) + ' servings') : (q === 1 ? lbl : fmtQty(q) + ' × ' + lbl);
+    save(); ui.sheet = null; toast('Item updated'); renderLayer();
+  },
+  'del-item'(){ const s = ui.sheet, m = data.saved.find(x => x.id === s.id); const it = m.items.splice(s.j, 1)[0]; save(); ui.sheet = null; renderLayer();
+    undoToast('Removed ' + it.name, () => { m.items.splice(s.j, 0, it); save(); renderLayer(); }); },
   'rm-item'(el){ const m = data.saved.find(x => x.id === el.dataset.id); m.items.splice(+el.dataset.j, 1); save(); renderLayer(); },
   'rename-saved'(el){ const m = data.saved.find(x => x.id === el.dataset.id); const n = prompt('Rename saved meal', m.name); if(n && n.trim()){ m.name = n.trim(); save(); renderLayer(); } },
   'del-saved'(el){ const i = data.saved.findIndex(x => x.id === el.dataset.id); const m = data.saved[i]; data.saved.splice(i, 1); save(); renderLayer();
@@ -935,6 +1021,7 @@ document.addEventListener('input', ev => {
     if(!ev.target.value.trim()) runSearch(''); else renderResults();
   }
   if(ev.target.dataset && ev.target.dataset.goal) macroCheck();
+  if(ev.target.id === 'it-qty' || (ev.target.dataset && ev.target.dataset.nut)) itemTotalNote();
 });
 document.addEventListener('change', ev => {
   if(ev.target.id === 'importfile' && ev.target.files[0]) importData(ev.target.files[0]);
