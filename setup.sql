@@ -12,6 +12,8 @@ create table if not exists fit_health (
   steps numeric, distance_mi numeric, active_kcal numeric, resting_hr numeric,
   sleep_min numeric, bed_at timestamptz, wake_at timestamptz,
   updated_at timestamptz not null default now());
+-- added later: whether a night's sleep came from real sleep tracking or only "In Bed" time
+alter table fit_health add column if not exists sleep_kind text;
 create table if not exists fit_weight (
   at timestamptz primary key, lb numeric not null, source text not null default 'health');
 create table if not exists fit_backup (
@@ -44,10 +46,12 @@ create or replace function fit_push(
   weight_at text default null, sleep text default null)
 returns text language plpgsql security definer set search_path = public as $$
 declare
-  d date; s_min numeric; s_bed timestamptz; s_wake timestamptz; w numeric; dist numeric;
+  d date; s_min numeric; s_bed timestamptz; s_wake timestamptz; s_kind text; w numeric; dist numeric;
 begin
   if not fit_ok(token) then raise exception 'Wrong sync token'; end if;
-  d := coalesce(nullif(trim(day), '')::date, current_date);
+  -- the day must come from the phone; the database's own clock is UTC and can be a day ahead in the evening
+  if coalesce(trim(day), '') = '' then raise exception 'Missing day: check the Format Date action in the Shortcut'; end if;
+  d := trim(day)::date;
 
   if coalesce(sleep, '') <> '' then
     with parts as (
@@ -58,18 +62,27 @@ begin
     asleep as (
       select tstzrange(s, e) r from parts
       where s is not null and e > s and v not like '%awake%' and v not like '%bed%'),
-    merged as (select unnest(range_agg(r)) r from asleep)   -- overlapping Watch/iPhone samples count once
+    inbed as (
+      select tstzrange(s, e) r from parts
+      where s is not null and e > s and v like '%bed%'),
+    -- real sleep stages (watch or sleep app) win; without them, use the iPhone's "In Bed" time
+    pick as (
+      select r, 'asleep' k from asleep
+      union all
+      select r, 'inbed' k from inbed where not exists (select 1 from asleep)),
+    merged as (select unnest(range_agg(r)) r from pick)   -- overlapping samples count once
     select (select sum(extract(epoch from upper(r) - lower(r))) / 60 from merged),
-           (select min(s) from parts where s is not null),
-           (select max(upper(r)) from merged)
-      into s_min, s_bed, s_wake;
+           (select min(lower(r)) from merged),
+           (select max(upper(r)) from merged),
+           (select min(k) from pick)
+      into s_min, s_bed, s_wake, s_kind;
   end if;
 
   dist := fit_num(distance);
   if distance ilike '%km%' then dist := dist * 0.621371; end if;
 
-  insert into fit_health as h (day, steps, distance_mi, active_kcal, resting_hr, sleep_min, bed_at, wake_at, updated_at)
-  values (d, fit_num(steps), dist, fit_num(active), fit_num(resting_hr), s_min, s_bed, s_wake, now())
+  insert into fit_health as h (day, steps, distance_mi, active_kcal, resting_hr, sleep_min, bed_at, wake_at, sleep_kind, updated_at)
+  values (d, fit_num(steps), dist, fit_num(active), fit_num(resting_hr), s_min, s_bed, s_wake, s_kind, now())
   on conflict on constraint fit_health_pkey do update set
     -- running totals only grow during the day, so keep the larger number
     steps = greatest(h.steps, excluded.steps),
@@ -80,6 +93,7 @@ begin
     sleep_min = case when excluded.sleep_min is not null and excluded.sleep_min >= coalesce(h.sleep_min, 0) then excluded.sleep_min else h.sleep_min end,
     bed_at = case when excluded.sleep_min is not null and excluded.sleep_min >= coalesce(h.sleep_min, 0) then excluded.bed_at else h.bed_at end,
     wake_at = case when excluded.sleep_min is not null and excluded.sleep_min >= coalesce(h.sleep_min, 0) then excluded.wake_at else h.wake_at end,
+    sleep_kind = case when excluded.sleep_min is not null and excluded.sleep_min >= coalesce(h.sleep_min, 0) then excluded.sleep_kind else h.sleep_kind end,
     updated_at = now();
 
   w := fit_num(weight);

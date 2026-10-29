@@ -9,6 +9,10 @@ function cloud(){ return data.settings.sb || {}; }
 function cloudReady(){ const c = cloud(); return !!(c.url && c.key && data.settings.syncToken); }
 function cleanUrl(u){
   u = String(u || '').trim().replace(/\/+$/, '');
+  // Accept the dashboard address from the browser (supabase.com/dashboard/project/<id>/...) or just the project ID.
+  const dash = u.match(/supabase\.com\/dashboard\/project\/([a-z0-9]{10,40})/i);
+  if(dash) return 'https://' + dash[1].toLowerCase() + '.supabase.co';
+  if(/^[a-z0-9]{15,40}$/i.test(u)) return 'https://' + u.toLowerCase() + '.supabase.co';
   if(u && !/^https?:\/\//.test(u)) u = 'https://' + u;
   return u.replace(/\/rest\/v1.*$/, '');
 }
@@ -69,6 +73,7 @@ async function pushPendingWeights(){
     w.pending = false;
   }
 }
+function everHas(field){ return Object.values((data.health && data.health.days) || {}).some(d => d[field] != null && +d[field] > 0); }
 function activeFor(k){ const d = (data.health && data.health.days[k]) || null; return d && d.active_kcal ? +d.active_kcal : 0; }
 
 /* ---------- online backup of diet + workouts ---------- */
@@ -146,7 +151,9 @@ function trendChart(metric, keys){
   const vals = keys.map(val);
   const W = 358, Hh = 170, L = 10, R = 10, T = 18, B = 34, n = keys.length;
   const present = vals.filter(v => v != null);
-  if(!present.length) return `<div class="msg" style="padding:24px 8px">No ${metric === 'hr' ? 'heart rate' : metric} data in this range yet.</div>`;
+  if(!present.length) return `<div class="msg" style="padding:24px 8px">${metric === 'hr' && !everHas('resting_hr')
+    ? 'Resting heart rate comes from an Apple Watch or another heart-rate wearable, so there’s nothing to chart from an iPhone alone.'
+    : `No ${metric === 'hr' ? 'heart rate' : metric} data in this range yet.`}</div>`;
   let max = Math.max(...present, metric === 'steps' ? goal * 1.1 : 0), min = 0;
   if(metric === 'hr'){ min = Math.floor(Math.min(...present) - 4); max = Math.ceil(Math.max(...present) + 4); }
   if(metric === 'sleep') max = Math.max(max, 9);
@@ -179,7 +186,8 @@ function trendChart(metric, keys){
   });
   const dash = '<span class="lg-dash"></span>';
   const legend = metric === 'steps' ? `<div class="legend"><span><i style="background:var(--accent)"></i>Goal hit</span><span><i style="background:var(--accent-mid)"></i>Under</span><span>${dash}Goal ${fmt(goal)}</span></div>`
-    : metric === 'sleep' ? `<div class="legend"><span><i style="background:var(--protein)"></i>7h or more</span><span><i style="background:var(--protein-soft)"></i>Under 7h</span><span>${dash}8 hours</span></div>`
+    : metric === 'sleep' ? `<div class="legend"><span><i style="background:var(--protein)"></i>7h or more</span><span><i style="background:var(--protein-soft)"></i>Under 7h</span><span>${dash}8 hours</span></div>${
+        keys.some(k => days[k] && days[k].sleep_kind === 'inbed') ? '<div class="note" style="margin-top:6px">Without a watch, this is time in bed from your iPhone’s Sleep schedule, so it includes time spent falling asleep.</div>' : ''}`
     : `<div class="legend"><span><i style="background:var(--danger)"></i>Resting heart rate (bpm)</span></div>`;
   return `<svg role="img" aria-label="${metric} per day, last ${n} days" width="100%" viewBox="0 0 ${W} ${Hh}" style="display:block">${g}</svg>${legend}`;
 }
@@ -229,9 +237,13 @@ function renderHealth(){
           <div><div class="label">Distance</div><div class="big">${d.distance_mi != null ? r1(d.distance_mi) : '—'} <small>mi</small></div></div>
         </div></div>
       <div class="tiles">
-        <div class="tile sleep"><span>Sleep</span><b>${hm(d.sleep_min)}</b><i>${d.bed_at ? tFmt(d.bed_at) + ' – ' + tFmt(d.wake_at) : 'Last night'}</i></div>
-        <div class="tile heart"><span>Resting HR</span><b>${d.resting_hr != null ? Math.round(d.resting_hr) : '—'} <small>bpm</small></b><i>${rhr7.length ? 'Avg ' + Math.round(rhr7.reduce((a, b) => a + b, 0) / rhr7.length) + ' this week' : '7-day average'}</i></div>
-        <div class="tile burn"><span>Burned</span><b>${d.active_kcal != null ? fmt(d.active_kcal) : '—'} <small>kcal</small></b><i>Active calories</i></div>
+        <div class="tile sleep"><span>${d.sleep_kind === 'inbed' ? 'In bed' : 'Sleep'}</span><b>${hm(d.sleep_min)}</b><i>${d.bed_at ? tFmt(d.bed_at) + ' – ' + tFmt(d.wake_at) : 'Last night · syncs in the morning'}</i></div>
+        <div class="tile heart"><span>Resting HR</span>${everHas('resting_hr')
+          ? `<b>${d.resting_hr != null ? Math.round(d.resting_hr) : '—'} <small>bpm</small></b><i>${rhr7.length ? 'Avg ' + Math.round(rhr7.reduce((a, b) => a + b, 0) / rhr7.length) + ' this week' : '7-day average'}</i>`
+          : `<b>—</b><i>Needs a watch or heart-rate band</i>`}</div>
+        <div class="tile burn"><span>Burned</span>${everHas('active_kcal')
+          ? `<b>${d.active_kcal != null ? fmt(d.active_kcal) : '—'} <small>kcal</small></b><i>Active calories</i>`
+          : `<b>—</b><i>Usually needs a watch</i>`}</div>
       </div>
     </section>
     <section class="card" aria-label="Trends" style="padding:16px">
@@ -291,6 +303,7 @@ function healthSettingsHTML(){
         <li><b>Run the setup.</b> Copy the setup script, then in Supabase open <b>SQL Editor</b>, paste it, and tap <b>Run</b>. It already contains your private sync token.
           <button class="btn dark" style="width:100%;margin-top:8px" data-act="h-copy-sql">Copy setup script</button></li>
         <li><b>Connect the app.</b> In Supabase, open <b>Project Settings → API Keys</b> (or the <b>Connect</b> button) and copy the <b>Project URL</b> and the <b>publishable</b> key (an older project may show an “anon public” key instead; either works). Paste both here:
+          <div class="note" style="margin-top:8px">Can’t find the URL? Just copy the address from your browser while you’re in the project (it looks like supabase.com/dashboard/project/abcd…) and paste it here; the app works out the rest.</div>
           <label class="sublabel" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">Project URL<input class="inp" id="sb-url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://abcd1234.supabase.co" value="${esc(c.url || '')}"></label>
           <label class="sublabel" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">Publishable (or anon) key<input class="inp" id="sb-key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sb_publishable_…" value="${esc(c.key || '')}"></label>
           <button class="btn" style="width:100%;margin-top:10px" data-act="h-test">Test connection</button></li>
@@ -345,7 +358,7 @@ function saveCloudInputs(){
 /* ---------- burned calories on the Diet page ---------- */
 function burnToggleHTML(){
   const on = !!data.settings.countBurn;
-  return `<div class="switchrow"><div><label for="burnsw">Count calories burned</label><span>Adds the day’s active calories from Apple Health to your calorie goal.</span></div>
+  return `<div class="switchrow"><div><label for="burnsw">Count calories burned</label><span>Adds the day’s active calories from Apple Health to your calorie goal.${on && !everHas('active_kcal') ? ' Apple Health hasn’t sent any yet; without a watch there may be none.' : ''}</span></div>
     <button id="burnsw" class="switch" role="switch" aria-checked="${on}" data-act="burn-toggle"><i></i></button></div>`;
 }
 
